@@ -1,0 +1,67 @@
+# Local dev: Postgres + MinIO (S3) + API + worker.
+#   docker compose up --build
+#   npm run schema   # with DATABASE_URL=postgresql://cops:cops@127.0.0.1:5432/careerops
+#   npm run seed -- demo@example.com
+x-base-env: &base-env
+  DATABASE_URL: postgresql://cops:cops@postgres:5432/careerops
+  S3_ENDPOINT: http://minio:9000
+  S3_REGION: us-east-1
+  S3_BUCKET: career-ops-saas
+  S3_ACCESS_KEY_ID: minioadmin
+  S3_SECRET_ACCESS_KEY: minioadmin123
+  S3_FORCE_PATH_STYLE: "true"
+  CAREER_OPS_HOME: /opt/career-ops
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: cops
+      POSTGRES_PASSWORD: cops
+      POSTGRES_DB: careerops
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+
+  # S3-compatible storage for local dev. Note: MinIO's open-source server was
+  # archived in 2025 (dl.min.io no longer serves it); the Docker Hub image
+  # still pulls, but any S3-compatible store works here (AWS, idrive e2,
+  # Garage, SeaweedFS, Adobe S3Mock). Production should use your real bucket.
+  minio:
+    image: minio/minio:latest
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: minioadmin
+      MINIO_ROOT_PASSWORD: minioadmin123
+    volumes:
+      - miniodata:/data
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+
+  api:
+    build: .
+    command: node api/server.mjs
+    ports:
+      - "3000:3000"
+    environment:
+      <<: *base-env
+      PORT: 3000
+    depends_on:
+      - postgres
+      - minio
+
+  worker:
+    build: .
+    command: node worker/worker.mjs
+    environment:
+      <<: *base-env
+      POLL_INTERVAL_MS: 2000
+    depends_on:
+      - postgres
+      - minio
+
+volumes:
+  pgdata:
+  miniodata:

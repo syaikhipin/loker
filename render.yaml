@@ -1,0 +1,69 @@
+# Render blueprint: API (web) + worker (background) + daily scan trigger (cron).
+# Postgres is EXTERNAL (Neon/Supabase free tier) — set DATABASE_URL manually.
+# S3 is EXTERNAL (your 5GB bucket) — set the S3_* vars manually.
+services:
+  - type: web
+    name: cops-api
+    plan: starter          # 512MB — API never touches Chromium
+    env: docker
+    dockerfilePath: ./Dockerfile
+    dockerCommand: node api/server.mjs
+    healthCheckPath: /health
+    envVars:
+      - key: DATABASE_URL
+        sync: false
+      - key: S3_ENDPOINT
+        sync: false
+      - key: S3_REGION
+        value: us-east-1
+      - key: S3_BUCKET
+        sync: false
+      - key: S3_ACCESS_KEY_ID
+        sync: false
+      - key: S3_SECRET_ACCESS_KEY
+        sync: false
+      - key: OPENAI_BASE_URL
+        sync: false
+      - key: OPENAI_API_KEY
+        sync: false
+      - key: OPENAI_MODEL
+        sync: false
+
+  - type: worker
+    name: cops-worker
+    plan: starter          # 512MB — one Chromium (headless shell) at a time
+    env: docker
+    dockerfilePath: ./Dockerfile
+    dockerCommand: node worker/worker.mjs
+    envVars:
+      - key: DATABASE_URL
+        sync: false
+      - key: S3_ENDPOINT
+        sync: false
+      - key: S3_REGION
+        value: us-east-1
+      - key: S3_BUCKET
+        sync: false
+      - key: S3_ACCESS_KEY_ID
+        sync: false
+      - key: S3_SECRET_ACCESS_KEY
+        sync: false
+      - key: OPENAI_BASE_URL
+        sync: false
+      - key: OPENAI_API_KEY
+        sync: false
+      - key: OPENAI_MODEL
+        sync: false
+      - key: POLL_INTERVAL_MS
+        value: 2000
+
+  - type: cron
+    name: cops-scan-trigger
+    plan: starter
+    env: docker
+    dockerfilePath: ./Dockerfile
+    dockerCommand: node scripts/trigger-scans.mjs
+    schedule: "0 6 * * *"
+    envVars:
+      - key: DATABASE_URL
+        sync: false
