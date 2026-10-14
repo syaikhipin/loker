@@ -10,6 +10,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { pool } from '../src/db.mjs';
 import { config } from '../src/config.mjs';
+import { migrate } from '../src/migrate.mjs';
 import { downloadUserDir, uploadUserDir, ensureBucket } from '../src/s3.mjs';
 import { runCareerOpsScript } from '../src/runner.mjs';
 
@@ -82,6 +83,8 @@ async function processJob(job) {
 
 async function main() {
   console.log('[worker] starting');
+  await migrate(pool);
+  console.log('[worker] schema ready');
   await ensureBucket();
   while (!stopping) {
     try {

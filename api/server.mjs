@@ -8,6 +8,7 @@ import { pathToFileURL } from 'node:url';
 import { pool } from '../src/db.mjs';
 import { apiKeyAuth } from '../src/auth.mjs';
 import { config } from '../src/config.mjs';
+import { migrate } from '../src/migrate.mjs';
 
 const JOB_TYPES = ['run-script', 'scan', 'pdf'];
 // No path traversal, no absolute paths: a bare script filename only.
@@ -98,6 +99,8 @@ export function createApp(db = pool) {
 
 const isMain = process.argv[1] && pathToFileURL(process.argv[1]).href === import.meta.url;
 if (isMain) {
+  await migrate(pool);
+  console.log('[api] schema ready');
   const app = createApp();
   app.listen(config.port, () => console.log(`[api] listening on :${config.port}`));
 }
