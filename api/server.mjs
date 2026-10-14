@@ -20,6 +20,16 @@ export function createApp(db = pool) {
   const app = express();
   app.use(express.json({ limit: '256kb' }));
 
+  // CORS: the browser frontend (Vercel) calls this API cross-origin.
+  // Auth is a Bearer token, never cookies, so a wildcard origin is safe.
+  app.use((req, res, next) => {
+    res.set('Access-Control-Allow-Origin', '*');
+    res.set('Access-Control-Allow-Headers', 'authorization, content-type');
+    res.set('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+    if (req.method === 'OPTIONS') return res.sendStatus(204);
+    next();
+  });
+
   app.get('/health', (_req, res) => res.json({ ok: true, time: new Date().toISOString() }));
 
   const auth = apiKeyAuth(db);

@@ -1,0 +1,214 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>career-ops</title>
+<style>
+  :root { --bg:#fafafa; --card:#fff; --line:#e5e5e5; --text:#1a1a1a; --muted:#666; --accent:#111; --ok:#15803d; --err:#b91c1c; --run:#b45309; --q:#6b7280; }
+  * { box-sizing: border-box; }
+  body { margin:0; font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; background:var(--bg); color:var(--text); }
+  header { background:#111; color:#fff; padding:14px 20px; display:flex; align-items:center; gap:12px; }
+  header h1 { font-size:18px; margin:0; font-weight:700; }
+  header span { color:#aaa; font-size:13px; }
+  main { max-width:900px; margin:0 auto; padding:20px; display:flex; flex-direction:column; gap:20px; }
+  .card { background:var(--card); border:1px solid var(--line); border-radius:12px; padding:16px 18px; }
+  .card h2 { margin:0 0 12px; font-size:16px; }
+  .row { display:flex; gap:10px; flex-wrap:wrap; align-items:end; }
+  .field { display:flex; flex-direction:column; gap:4px; flex:1; min-width:160px; }
+  .field label { font-size:12px; color:var(--muted); font-weight:600; }
+  input, select, textarea { font:inherit; padding:8px 10px; border:1px solid var(--line); border-radius:8px; background:#fff; width:100%; }
+  button { font:inherit; font-weight:600; padding:9px 16px; border:0; border-radius:8px; background:var(--accent); color:#fff; cursor:pointer; }
+  button.secondary { background:#eee; color:#111; }
+  button:disabled { opacity:.5; cursor:wait; }
+  .hint { font-size:12px; color:var(--muted); margin-top:6px; }
+  .tabs { display:flex; gap:6px; margin-bottom:12px; }
+  .tabs button { background:#eee; color:#111; padding:7px 14px; }
+  .tabs button.active { background:#111; color:#fff; }
+  .job { border:1px solid var(--line); border-radius:10px; padding:12px 14px; cursor:pointer; }
+  .job + .job { margin-top:10px; }
+  .job .top { display:flex; justify-content:space-between; gap:10px; align-items:center; }
+  .badge { font-size:11px; font-weight:700; padding:3px 8px; border-radius:999px; text-transform:uppercase; }
+  .badge.queued { background:#f3f4f6; color:var(--q); }
+  .badge.running { background:#fef3c7; color:var(--run); }
+  .badge.done { background:#dcfce7; color:var(--ok); }
+  .badge.error { background:#fee2e2; color:var(--err); }
+  .meta { font-size:12px; color:var(--muted); margin-top:4px; }
+  .detail { margin-top:10px; background:#fafafa; border:1px solid var(--line); border-radius:8px; padding:10px; display:none; }
+  .detail.open { display:block; }
+  pre { white-space:pre-wrap; word-break:break-word; font-size:12px; margin:0; }
+  .msg { font-size:13px; margin-top:8px; min-height:18px; }
+  .msg.err { color:var(--err); }
+  .msg.ok { color:var(--ok); }
+  .empty { color:var(--muted); font-size:14px; }
+</style>
+</head>
+<body>
+<header><h1>career-ops</h1><span>job queue</span></header>
+<main>
+  <section class="card">
+    <h2>Connection</h2>
+    <div class="row">
+      <div class="field"><label>API base URL</label><input id="apiUrl" value="https://loker-api.onrender.com"></div>
+      <div class="field"><label>API key</label><input id="apiKey" type="password" placeholder="cops_…"></div>
+      <button id="saveBtn" class="secondary">Save</button>
+    </div>
+    <div class="hint">The key is stored only in this browser (localStorage). Get one from the API owner.</div>
+    <div id="connMsg" class="msg"></div>
+  </section>
+
+  <section class="card">
+    <h2>New job</h2>
+    <div class="tabs">
+      <button data-type="scan" class="active">Scan</button>
+      <button data-type="run-script">Run script</button>
+      <button data-type="pdf">Generate PDF</button>
+    </div>
+    <div id="form-scan">
+      <div class="field"><label>Arguments (optional, comma-separated)</label><input id="scanArgs" placeholder="--provider apify, --limit 50"></div>
+    </div>
+    <div id="form-run-script" style="display:none">
+      <div class="row">
+        <div class="field"><label>Script</label><input id="scriptName" placeholder="validate-profile.mjs"></div>
+        <div class="field"><label>Arguments (comma-separated)</label><input id="scriptArgs" placeholder="--profile, cv.md"></div>
+      </div>
+    </div>
+    <div id="form-pdf" style="display:none">
+      <div class="row">
+        <div class="field"><label>Input path (in your data dir)</label><input id="pdfInput" placeholder="cv/cv.md"></div>
+        <div class="field"><label>Output path</label><input id="pdfOutput" placeholder="exports/cv.pdf"></div>
+      </div>
+    </div>
+    <div class="row" style="margin-top:12px"><button id="enqueueBtn">Enqueue job</button></div>
+    <div id="jobMsg" class="msg"></div>
+  </section>
+
+  <section class="card">
+    <h2>Jobs <button id="refreshBtn" class="secondary" style="float:right">Refresh</button></h2>
+    <div id="jobs"><div class="empty">No jobs yet.</div></div>
+  </section>
+</main>
+<script>
+const $ = (id) => document.getElementById(id);
+const apiUrlEl = $('apiUrl'), apiKeyEl = $('apiKey');
+apiUrlEl.value = localStorage.getItem('careerops_api_url') || apiUrlEl.value;
+apiKeyEl.value = localStorage.getItem('careerops_api_key') || '';
+let currentType = 'scan';
+let openJobId = null;
+
+document.querySelectorAll('.tabs button').forEach((b) => {
+  b.addEventListener('click', () => {
+    document.querySelectorAll('.tabs button').forEach((x) => x.classList.remove('active'));
+    b.classList.add('active');
+    currentType = b.dataset.type;
+    for (const t of ['scan', 'run-script', 'pdf']) $('form-' + t).style.display = t === currentType ? '' : 'none';
+  });
+});
+
+$('saveBtn').addEventListener('click', () => {
+  localStorage.setItem('careerops_api_url', apiUrlEl.value.trim().replace(/\/$/, ''));
+  localStorage.setItem('careerops_api_key', apiKeyEl.value.trim());
+  $('connMsg').textContent = 'Saved.';
+  $('connMsg').className = 'msg ok';
+  refresh();
+});
+
+async function call(path, opts = {}) {
+  const base = (localStorage.getItem('careerops_api_url') || apiUrlEl.value).trim().replace(/\/$/, '');
+  const key = localStorage.getItem('careerops_api_key') || apiKeyEl.value.trim();
+  const res = await fetch(base + path, {
+    ...opts,
+    headers: { 'content-type': 'application/json', 'authorization': 'Bearer ' + key, ...(opts.headers || {}) },
+  });
+  const text = await res.text();
+  let body = null;
+  try { body = JSON.parse(text); } catch { /* non-json */ }
+  if (!res.ok) throw new Error((body && body.error) || ('HTTP ' + res.status + ' ' + text.slice(0, 200)));
+  return body;
+}
+
+const splitArgs = (s) => s.split(',').map((x) => x.trim()).filter(Boolean);
+
+$('enqueueBtn').addEventListener('click', async () => {
+  const btn = $('enqueueBtn');
+  const msg = $('jobMsg');
+  msg.textContent = '';
+  btn.disabled = true;
+  try {
+    let payload;
+    if (currentType === 'scan') payload = { type: 'scan', args: splitArgs($('scanArgs').value) };
+    else if (currentType === 'run-script') {
+      const script = $('scriptName').value.trim();
+      if (!script) throw new Error('Script name is required.');
+      payload = { type: 'run-script', script, args: splitArgs($('scriptArgs').value) };
+    } else {
+      const input = $('pdfInput').value.trim(), output = $('pdfOutput').value.trim();
+      if (!input || !output) throw new Error('Input and output paths are required.');
+      payload = { type: 'pdf', payload: { input, output } };
+    }
+    const job = await call('/jobs', { method: 'POST', body: JSON.stringify(payload) });
+    msg.textContent = 'Enqueued job ' + job.id + ' (' + job.status + ').';
+    msg.className = 'msg ok';
+    refresh();
+  } catch (e) {
+    msg.textContent = e.message;
+    msg.className = 'msg err';
+  } finally {
+    btn.disabled = false;
+  }
+});
+
+function fmtTime(t) { return t ? new Date(t).toLocaleString() : '—'; }
+
+async function refresh() {
+  try {
+    const { jobs } = await call('/jobs');
+    const box = $('jobs');
+    if (!jobs.length) { box.innerHTML = '<div class="empty">No jobs yet.</div>'; return; }
+    box.innerHTML = '';
+    for (const j of jobs) {
+      const el = document.createElement('div');
+      el.className = 'job';
+      const payload = j.payload || {};
+      const title = j.type === 'run-script' ? payload.script : j.type === 'pdf' ? ('PDF ' + (payload.input || '')) : 'Scan';
+      el.innerHTML = '<div class="top"><strong>' + title + '</strong><span class="badge ' + j.status + '">' + j.status + '</span></div>'
+        + '<div class="meta">' + j.id + ' · created ' + fmtTime(j.created_at) + '</div>'
+        + '<div class="detail" id="detail-' + j.id + '"><pre>loading…</pre></div>';
+      el.addEventListener('click', () => toggleDetail(j.id));
+      box.appendChild(el);
+    }
+    if (openJobId) {
+      const d = $('detail-' + openJobId);
+      if (d) { d.classList.add('open'); loadDetail(openJobId); }
+    }
+  } catch (e) {
+    $('jobs').innerHTML = '<div class="empty">Could not load jobs: ' + e.message + '</div>';
+  }
+}
+
+async function loadDetail(id) {
+  const d = $('detail-' + id);
+  if (!d) return;
+  try {
+    const j = await call('/jobs/' + id);
+    d.querySelector('pre').textContent = JSON.stringify(j, null, 2);
+  } catch (e) {
+    d.querySelector('pre').textContent = 'Error: ' + e.message;
+  }
+}
+
+function toggleDetail(id) {
+  const d = $('detail-' + id);
+  if (!d) return;
+  const willOpen = !d.classList.contains('open');
+  document.querySelectorAll('.detail').forEach((x) => x.classList.remove('open'));
+  if (willOpen) { d.classList.add('open'); openJobId = id; loadDetail(id); }
+  else openJobId = null;
+}
+
+$('refreshBtn').addEventListener('click', refresh);
+refresh();
+setInterval(refresh, 4000);
+</script>
+</body>
+</html>
