@@ -10,19 +10,28 @@ import { config } from './config.mjs';
 //   - verify-ca/verify-full: verify against the provider CA.
 // Provide the CA via DATABASE_SSL_CA (PEM contents) or PGSSLROOTCERT
 // (path to a PEM file) to get full verification instead.
-function sslOptions() {
+//
+// Quirk: if the connection string still carries sslmode=..., pg's
+// connection-string parser silently discards an explicitly passed ssl
+// option (resolved ssl becomes {}). So sslmode is stripped from the string
+// and the computed ssl option below is the single source of truth.
+function sslConfig() {
   const url = new URL(config.databaseUrl);
   const sslmode = url.searchParams.get('sslmode') ?? 'prefer';
+  url.searchParams.delete('sslmode');
+  const cleanUrl = url.toString();
+
   const caPem = process.env.DATABASE_SSL_CA
     || (process.env.PGSSLROOTCERT ? readFileSync(process.env.PGSSLROOTCERT, 'utf8') : undefined);
-  if (sslmode === 'disable') return undefined;
-  if (caPem) return { ca: caPem, rejectUnauthorized: true };
+  if (sslmode === 'disable') return { connectionString: cleanUrl, ssl: undefined };
+  if (caPem) return { connectionString: cleanUrl, ssl: { ca: caPem, rejectUnauthorized: true } };
   if (sslmode === 'verify-ca' || sslmode === 'verify-full') {
-    return { rejectUnauthorized: true };
+    return { connectionString: cleanUrl, ssl: { rejectUnauthorized: true } };
   }
-  return { rejectUnauthorized: false };
+  return { connectionString: cleanUrl, ssl: { rejectUnauthorized: false } };
 }
 
 const { Pool } = pg;
-export const pool = new Pool({ connectionString: config.databaseUrl, ssl: sslOptions(), max: 10 });
+const { connectionString, ssl } = sslConfig();
+export const pool = new Pool({ connectionString, ssl, max: 10 });
 pool.on('error', (e) => console.error('[db] pool error:', e.message));
