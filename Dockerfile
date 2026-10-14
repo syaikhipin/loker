@@ -28,5 +28,8 @@ RUN git clone --depth 1 --branch ${CAREER_OPS_REF} https://github.com/career-ops
 COPY . ./
 
 EXPOSE 3000
-# Render / compose override this per service:
-CMD ["node", "api/server.mjs"]
+# Role switch: SERVICE=worker runs the worker, anything else runs the API.
+# See entrypoint.sh. Platform command overrides (e.g. Render dockerCommand)
+# are ignored; SERVICE decides.
+RUN chmod +x entrypoint.sh
+ENTRYPOINT ["/app/entrypoint.sh"]
